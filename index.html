@@ -495,10 +495,15 @@
           <button class="btn btn-primary" onclick="openModal('daily')">+ Add Entry</button>
         </div>
         <div class="toolbar">
-          <input class="search-box" placeholder="Search vehicle, driver, vendor..." oninput="filterTable('daily', this.value)" />
-          <select class="filter-sel" onchange="filterByVendor(this.value)">
+          <input class="search-box" placeholder="Search vehicle, driver, vendor..." id="dailySearch" oninput="applyDailyFilters()" />
+          <select class="filter-sel" id="vendorFilter" onchange="applyDailyFilters()">
             <option value="">All vendors</option>
           </select>
+          <select class="filter-sel" id="monthFilter" onchange="onMonthFilterChange()">
+            <option value="">All months</option>
+          </select>
+          <input type="date" class="form-input" id="dateFilter" onchange="applyDailyFilters()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:7px 10px;font-size:13px;color:var(--text);font-family:var(--font);outline:none;cursor:pointer;" title="Filter by specific date"/>
+          <button class="btn" onclick="clearDailyFilters()" style="font-size:12px;padding:6px 12px;">✕ Clear</button>
         </div>
         <div class="table-wrap">
           <div class="table-scroll"><table id="dailyTable"><thead></thead><tbody></tbody></table></div>
@@ -846,10 +851,75 @@ function renderRecentTable() {
 }
 
 function populateVendorFilter() {
-  const sel = document.querySelector('.filter-sel');
-  if (!sel) return;
-  const vendors = [...new Set(sheets.daily.map(r => r['VENDOR']).filter(Boolean))].sort();
-  sel.innerHTML = '<option value="">All vendors</option>' + vendors.map(v => `<option value="${v}">${v}</option>`).join('');
+  // Vendor filter
+  const sel = document.getElementById('vendorFilter');
+  if (sel) {
+    const vendors = [...new Set(sheets.daily.map(r => r['VENDOR']).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">All vendors</option>' + vendors.map(v => `<option value="${v}">${v}</option>`).join('');
+  }
+  // Month filter — dynamically built from real data
+  const msel = document.getElementById('monthFilter');
+  if (msel) {
+    const months = [...new Set(sheets.daily.map(r => {
+      const d = r['DATE'] ? new Date(r['DATE']) : null;
+      return d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : null;
+    }).filter(Boolean))].sort().reverse();
+    msel.innerHTML = '<option value="">All months</option>' + months.map(m => {
+      const [y, mo] = m.split('-');
+      const label = new Date(y, mo-1).toLocaleString('en-IN', {month:'long', year:'numeric'});
+      return `<option value="${m}">${label}</option>`;
+    }).join('');
+  }
+}
+
+function onMonthFilterChange() {
+  // When month is selected, clear the specific date filter
+  const dateF = document.getElementById('dateFilter');
+  if (dateF) dateF.value = '';
+  applyDailyFilters();
+}
+
+function applyDailyFilters() {
+  const search = (document.getElementById('dailySearch')?.value || '').toLowerCase();
+  const vendor = document.getElementById('vendorFilter')?.value || '';
+  const month  = document.getElementById('monthFilter')?.value || '';
+  const date   = document.getElementById('dateFilter')?.value || '';
+
+  let result = sheets.daily;
+
+  if (vendor) result = result.filter(r => r['VENDOR'] === vendor);
+
+  if (date) {
+    // Specific date overrides month
+    result = result.filter(r => {
+      const d = r['DATE'] ? new Date(r['DATE']) : null;
+      if (!d) return false;
+      const y = d.getFullYear();
+      const m = String(d.getMonth()+1).padStart(2,'0');
+      const day = String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${day}` === date;
+    });
+  } else if (month) {
+    result = result.filter(r => {
+      const d = r['DATE'] ? new Date(r['DATE']) : null;
+      if (!d) return false;
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` === month;
+    });
+  }
+
+  if (search) result = result.filter(row => Object.values(row).some(v => String(v).toLowerCase().includes(search)));
+
+  filtered.daily = result;
+  renderTable('dailyTable', result, ['SR NO','DATE','VEHICLE','DRIVER','VENDOR','CNG','TRIP KM','AMOUNT'], 'dailyCount');
+}
+
+function clearDailyFilters() {
+  const s = document.getElementById('dailySearch'); if (s) s.value = '';
+  const v = document.getElementById('vendorFilter'); if (v) v.value = '';
+  const m = document.getElementById('monthFilter'); if (m) m.value = '';
+  const d = document.getElementById('dateFilter'); if (d) d.value = '';
+  filtered.daily = [...sheets.daily];
+  renderTable('dailyTable', filtered.daily, ['SR NO','DATE','VEHICLE','DRIVER','VENDOR','CNG','TRIP KM','AMOUNT'], 'dailyCount');
 }
 
 // ============================================================
@@ -865,11 +935,7 @@ function filterTable(type, query) {
   else if (type === 'vehicles') { filtered.vehicles = result; renderTable('vehiclesTable', result, ['Vehicle','Driver','Mobile','Company','Reporting Time','Status'], 'vehiclesCount'); }
 }
 
-function filterByVendor(vendor) {
-  const result = vendor ? sheets.daily.filter(r => r['VENDOR'] === vendor) : [...sheets.daily];
-  filtered.daily = result;
-  renderTable('dailyTable', result, ['SR NO','DATE','VEHICLE','DRIVER','VENDOR','CNG','TRIP KM','AMOUNT'], 'dailyCount');
-}
+
 
 // ============================================================
 // DETAIL MODAL
