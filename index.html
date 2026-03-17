@@ -705,9 +705,10 @@ async function loadData() {
     return XLSX.utils.sheet_to_json(ws, { defval: '' });
   }
 
-  sheets.daily   = parseSheet(CONFIG.sheets.daily);
-  sheets.drivers = parseSheet(CONFIG.sheets.drivers);
-  sheets.static  = parseSheet(CONFIG.sheets.static);
+  // Parse and strip blank rows (Excel often has empty trailing rows)
+  sheets.daily   = parseSheet(CONFIG.sheets.daily).filter(r => r['VEHICLE'] && r['VEHICLE'] !== '');
+  sheets.drivers = parseSheet(CONFIG.sheets.drivers).filter(r => r['DRIVER NAME'] && r['DRIVER NAME'] !== '');
+  sheets.static  = parseSheet(CONFIG.sheets.static).filter(r => r['REGISTRATION'] && r['REGISTRATION'] !== '');
 
   filtered.daily   = [...sheets.daily];
   filtered.drivers = [...sheets.drivers];
@@ -776,14 +777,17 @@ function renderTable(tableId, data, cols, countId) {
       if (val instanceof Date) val = val.toLocaleDateString('en-IN');
       else if (val === null || val === undefined) val = '';
       const isNum = typeof val === 'number';
+      const isMobile = col === 'MOBILE NO' || col === 'Mobile' || col === 'MOBILE NO.' || col === 'DRIVER NO';
       const isMono = col.includes('NO') || col.includes('KM') || col.includes('CNG') || col === 'SR NO';
-      return `<td class="${isMono?'mono':''}">${isNum ? val.toLocaleString() : val}</td>`;
+      const display = isMobile ? String(Math.round(Number(String(val).replace(/,/g,'')))).replace(/,/g,'') : (isNum ? val.toLocaleString() : val);
+      return `<td class="${isMono?'mono':''}">${display}</td>`;
     }).join('') + '</tr>';
   }).join('');
 }
 
 function renderRecentTable() {
-  const recent = [...sheets.daily].reverse().slice(0, 15);
+  const real = sheets.daily.filter(r => r['VEHICLE'] && r['VEHICLE'] !== '');
+  const recent = [...real].reverse().slice(0, 15);
   renderTable('recentTable', recent, ['SR NO','DATE','VEHICLE','DRIVER','VENDOR','TRIP KM','AMOUNT'], null);
 }
 
@@ -1017,7 +1021,7 @@ function renderDriverList(body) {
       const trips = sheets.daily.filter(r => r['DRIVER'] === name).length;
       return `<div class="driver-card" onclick="openDriverDetail('${name.replace(/'/g,"\\'")}')">
         <div class="driver-card-name">👤 ${name}</div>
-        <div class="driver-card-mobile">${d['MOBILE NO'] || '—'}</div>
+        <div class="driver-card-mobile">${d['MOBILE NO'] ? String(Math.round(Number(d['MOBILE NO']))).replace(/,/g,'') : '—'}</div>
         <div class="driver-card-vehicle">Vehicle: ${d['CUR VEHICLE']||'—'} · Trips: ${trips}</div>
       </div>`;
     }).join('');
@@ -1076,7 +1080,7 @@ function openDriverDetail(name) {
       <div class="detail-modal-icon green">👤</div>
       <div>
         <div class="detail-modal-title">${name}</div>
-        <div class="detail-modal-sub">📞 ${dInfo['MOBILE NO']||'—'} · Vehicle: ${dInfo['CUR VEHICLE']||'—'}</div>
+        <div class="detail-modal-sub">📞 ${dInfo['MOBILE NO'] ? String(Math.round(Number(dInfo['MOBILE NO']))).replace(/,/g,'') : '—'} · Vehicle: ${dInfo['CUR VEHICLE']||'—'}</div>
       </div>
       <div style="flex:1"></div>
       <button class="btn" onclick="openDetailModal('drivers')" style="font-size:12px;padding:5px 10px;">← Back</button>
