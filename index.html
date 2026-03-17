@@ -443,6 +443,13 @@
       <div class="nav-item" onclick="showPage('static', this)">
         <span class="nav-icon">📋</span> Static Data
       </div>
+      <div class="nav-section">Tools</div>
+      <div class="nav-item" onclick="showPage('tracking', this)">
+        <span class="nav-icon">📍</span> Live Tracking
+      </div>
+      <div class="nav-item" onclick="showPage('adhoc', this)">
+        <span class="nav-icon">⚡</span> ADHOC
+      </div>
     </div>
 
     <div class="content">
@@ -539,6 +546,32 @@
         </div>
         <div class="table-wrap">
           <div class="table-scroll"><table id="staticTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- LIVE TRACKING -->
+      <div class="page" id="page-tracking">
+        <div class="section-header">
+          <div class="section-title">📍 Live Tracking</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;">
+          <div style="font-size:64px;margin-bottom:1.5rem;">🛰️</div>
+          <div style="font-size:18px;font-weight:600;margin-bottom:0.75rem;color:var(--text);">Live Tracking Coming Soon</div>
+          <div style="font-size:13px;color:var(--text2);max-width:400px;line-height:1.7;">Real-time GPS tracking for all vehicles will be available here. Track location, speed, and route history live on a map.</div>
+          <div style="margin-top:2rem;background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:1.25rem 2rem;font-size:12px;color:var(--text3);">🔧 Data integration in progress — check back soon</div>
+        </div>
+      </div>
+
+      <!-- ADHOC -->
+      <div class="page" id="page-adhoc">
+        <div class="section-header">
+          <div class="section-title">⚡ ADHOC</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;">
+          <div style="font-size:64px;margin-bottom:1.5rem;">📦</div>
+          <div style="font-size:18px;font-weight:600;margin-bottom:0.75rem;color:var(--text);">ADHOC Management Coming Soon</div>
+          <div style="font-size:13px;color:var(--text2);max-width:400px;line-height:1.7;">Manage ad-hoc trips, one-off assignments, and special deliveries outside the regular schedule here.</div>
+          <div style="margin-top:2rem;background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:1.25rem 2rem;font-size:12px;color:var(--text3);">🔧 Data integration in progress — check back soon</div>
         </div>
       </div>
 
