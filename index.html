@@ -599,13 +599,28 @@
       <!-- ADHOC -->
       <div class="page" id="page-adhoc">
         <div class="section-header">
-          <div class="section-title">⚡ ADHOC</div>
+          <div class="section-title">⚡ ADHOC Trips</div>
+          <div class="section-count" id="adhocCount">0 records</div>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;">
-          <div style="font-size:64px;margin-bottom:1.5rem;">📦</div>
-          <div style="font-size:18px;font-weight:600;margin-bottom:0.75rem;color:var(--text);">ADHOC Management Coming Soon</div>
-          <div style="font-size:13px;color:var(--text2);max-width:400px;line-height:1.7;">Manage ad-hoc trips, one-off assignments, and special deliveries outside the regular schedule here.</div>
-          <div style="margin-top:2rem;background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:1.25rem 2rem;font-size:12px;color:var(--text3);">🔧 Data integration in progress — check back soon</div>
+        <!-- ADHOC Summary Cards -->
+        <div class="metrics-grid" style="margin-bottom:1.25rem;" id="adhocMetrics">
+          <div class="metric-card accent"><div class="metric-label">Total Trips</div><div class="metric-value" id="adhoc-trips">—</div></div>
+          <div class="metric-card"><div class="metric-label">Total KM</div><div class="metric-value" id="adhoc-km">—</div></div>
+          <div class="metric-card green"><div class="metric-label">Total Amount</div><div class="metric-value" id="adhoc-amt">—</div></div>
+          <div class="metric-card"><div class="metric-label">Vehicles Used</div><div class="metric-value" id="adhoc-vehs">—</div></div>
+        </div>
+        <div class="toolbar">
+          <input class="search-box" placeholder="Search vehicle, center, mode..." id="adhocSearch" oninput="applyAdhocFilters()"/>
+          <select class="filter-sel" id="adhocCenterFilter" onchange="applyAdhocFilters()">
+            <option value="">All centers</option>
+          </select>
+          <select class="filter-sel" id="adhocModeFilter" onchange="applyAdhocFilters()">
+            <option value="">All modes</option>
+          </select>
+          <button class="btn" onclick="clearAdhocFilters()" style="font-size:12px;padding:6px 12px;">✕ Clear</button>
+        </div>
+        <div class="table-wrap">
+          <div class="table-scroll"><table id="adhocTable"><thead></thead><tbody></tbody></table></div>
         </div>
       </div>
 
@@ -643,7 +658,8 @@ const CONFIG = {
   sheets: {
     daily:   'DAILY DATA',
     drivers: 'DRIVER & VEHICLE',
-    static:  'STATIC DATA'
+    static:  'STATIC DATA',
+    adhoc:   'ADHOC'
   }
 };
 
@@ -744,8 +760,8 @@ async function gCall(path, opts = {}) {
 // DATA
 // ============================================================
 let fileId = null;
-let sheets = { daily: [], drivers: [], static: [] };
-let filtered = { daily: [], drivers: [], static: [], vehicles: [] };
+let sheets = { daily: [], drivers: [], static: [], adhoc: [] };
+let filtered = { daily: [], drivers: [], static: [], vehicles: [], adhoc: [] };
 
 async function findFile() {
   const data = await gCall(`/me/drive/root/search(q='${encodeURIComponent(CONFIG.fileName)}')?$top=5`);
@@ -776,6 +792,10 @@ async function loadData() {
   sheets.daily   = parseSheet(CONFIG.sheets.daily).filter(r => r['VEHICLE'] && r['VEHICLE'] !== '');
   sheets.drivers = parseSheet(CONFIG.sheets.drivers).filter(r => r['DRIVER NAME'] && r['DRIVER NAME'] !== '');
   sheets.static  = parseSheet(CONFIG.sheets.static).filter(r => r['REGISTRATION'] && r['REGISTRATION'] !== '');
+  sheets.adhoc   = parseSheet(CONFIG.sheets.adhoc).filter(r => r['Date'] && r['Vehicle No']);
+  filtered.adhoc = [...sheets.adhoc];
+  sheets.adhoc   = parseSheet(CONFIG.sheets.adhoc).filter(r => r['Date'] && r['Vehicle No']);
+  filtered.adhoc = [...sheets.adhoc];
 
   filtered.daily   = [...sheets.daily];
   filtered.drivers = [...sheets.drivers];
@@ -811,6 +831,8 @@ function renderAll() {
   renderTable('driversTable', filtered.drivers, ['SR NO','DRIVER NAME','MOBILE NO','VEHICLE','REPORTING TIME','company','Behaviour','status'], 'driversCount');
   renderTable('vehiclesTable', filtered.vehicles, ['Vehicle','Driver','Mobile','Company','Reporting Time','Status'], 'vehiclesCount');
   renderTable('staticTable', filtered.static, ['REGISTRATION','LOCATION','DILVERY LOCATION','TOTAL KM','TOTAL CNG','TOTAL PETROL','AVG FUEL','PER KM'], 'staticCount');
+  renderAdhoc();
+  renderAdhocPage();
   renderRecentTable();
   populateVendorFilter();
 }
@@ -1462,6 +1484,86 @@ async function saveEntry() {
   closeModal();
   await loadData();
   alert('✅ Entry saved to your OneDrive Excel!');
+}
+
+// ============================================================
+// ADHOC
+// ============================================================
+function renderAdhoc() {
+  const cols = ['Date','Ticket no.','Center Name','MODE','Vehicle No','Vehicle Type','TK DURATION','Total KMs','Extra KMs','Base Cost AMT','Extra KM Cost','Toll Tax Cost As Per Slip','Parking cost As Per Slip','Detention Charges','G. Total','REMARKS'];
+  const colMap = {
+    'Date':'Date','Ticket no.':'Ticket no.','Center Name':'Center Name','MODE':'MODE',
+    'Vehicle No':'Vehicle No','Vehicle Type':'Vehicle Type','TK DURATION':'TK DURATION',
+    'Total KMs':'Total KMs','Extra KMs':'Total Extra KMs','Base Cost AMT':'Base Cost AMT',
+    'Extra KM Cost':'Extra KM Cost','Toll Tax Cost As Per Slip':'Toll Tax Cost As Per Slip',
+    'Parking cost As Per Slip':'Parking cost As Per Slip','Detention Charges':'Detention Charges',
+    'G. Total':'G. Total','REMARKS':'REMARKS'
+  };
+
+  const data = filtered.adhoc;
+  const countEl = document.getElementById('adhocCount');
+  if (countEl) countEl.textContent = data.length + ' records';
+
+  // Summary metrics
+  const totalKm = data.reduce((s,r) => s + (parseFloat(r['Total KMs'])||0), 0);
+  const totalAmt = data.reduce((s,r) => s + (parseFloat(r['G. Total'])||0), 0);
+  const uniqueVehs = new Set(data.map(r => r['Vehicle No']).filter(Boolean)).size;
+  const mTrips = document.getElementById('adhoc-trips'); if (mTrips) mTrips.textContent = data.length;
+  const mKm = document.getElementById('adhoc-km'); if (mKm) mKm.textContent = Math.round(totalKm).toLocaleString();
+  const mAmt = document.getElementById('adhoc-amt'); if (mAmt) mAmt.textContent = '₹' + Math.round(totalAmt).toLocaleString();
+  const mVehs = document.getElementById('adhoc-vehs'); if (mVehs) mVehs.textContent = uniqueVehs;
+
+  // Populate filters
+  const centerSel = document.getElementById('adhocCenterFilter');
+  if (centerSel && centerSel.options.length <= 1) {
+    const centers = [...new Set(sheets.adhoc.map(r => r['Center Name']).filter(Boolean))].sort();
+    centerSel.innerHTML = '<option value="">All centers</option>' + centers.map(c => `<option value="${c}">${c}</option>`).join('');
+  }
+  const modeSel = document.getElementById('adhocModeFilter');
+  if (modeSel && modeSel.options.length <= 1) {
+    const modes = [...new Set(sheets.adhoc.map(r => r['MODE']).filter(Boolean))].sort();
+    modeSel.innerHTML = '<option value="">All modes</option>' + modes.map(m => `<option value="${m}">${m}</option>`).join('');
+  }
+
+  // Render table
+  const table = document.getElementById('adhocTable');
+  if (!table) return;
+  const displayCols = ['Date','Ticket no.','Center Name','MODE','Vehicle No','Vehicle Type','TK DURATION','Total KMs','Total Extra KMs','Base Cost AMT','Extra KM Cost','Toll Tax Cost As Per Slip','Parking cost As Per Slip','Detention Charges','G. Total','REMARKS'];
+  const headers = ['DATE','TICKET NO','CENTER','MODE','VEHICLE','TYPE','DURATION (hr)','TOTAL KM','EXTRA KM','BASE AMT','EXTRA KM COST','TOLL','PARKING','DETENTION','G. TOTAL','REMARKS'];
+  table.querySelector('thead').innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+  if (!data.length) { table.querySelector('tbody').innerHTML = '<tr><td colspan="' + displayCols.length + '" class="no-data">No ADHOC data found</td></tr>'; return; }
+  table.querySelector('tbody').innerHTML = data.map(row => {
+    return '<tr>' + displayCols.map((col, i) => {
+      let val = row[col];
+      if (val instanceof Date) val = val.toLocaleDateString('en-IN');
+      else if (val === null || val === undefined || val === '') val = '—';
+      const isAmt = ['Base Cost AMT','Extra KM Cost','Toll Tax Cost As Per Slip','Parking cost As Per Slip','Detention Charges','G. Total'].includes(col);
+      const isNum = typeof val === 'number';
+      const display = isAmt && isNum ? '₹' + val.toLocaleString() : (isNum ? val.toLocaleString() : val);
+      const color = col === 'G. Total' ? 'style="color:var(--accent2);font-weight:600;"' : '';
+      return `<td class="mono" ${color}>${display}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+}
+
+function applyAdhocFilters() {
+  const search = (document.getElementById('adhocSearch')?.value || '').toLowerCase();
+  const center = document.getElementById('adhocCenterFilter')?.value || '';
+  const mode   = document.getElementById('adhocModeFilter')?.value || '';
+  let data = sheets.adhoc;
+  if (center) data = data.filter(r => r['Center Name'] === center);
+  if (mode)   data = data.filter(r => r['MODE'] === mode);
+  if (search) data = data.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(search)));
+  filtered.adhoc = data;
+  renderAdhoc();
+}
+
+function clearAdhocFilters() {
+  const s = document.getElementById('adhocSearch'); if (s) s.value = '';
+  const c = document.getElementById('adhocCenterFilter'); if (c) c.value = '';
+  const m = document.getElementById('adhocModeFilter'); if (m) m.value = '';
+  filtered.adhoc = [...sheets.adhoc];
+  renderAdhoc();
 }
 
 // ============================================================
