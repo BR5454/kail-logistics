@@ -496,13 +496,14 @@
 
       <!-- DAILY DATA -->
       <div class="page" id="page-daily">
-        <div class="section-header">
-          <div class="section-title">Daily Data</div>
-          <div class="section-count" id="dailyCount">0 records</div>
-          <div class="spacer"></div>
-          <button class="btn btn-primary" onclick="openModal('daily')">+ Add Entry</button>
-        </div>
-        <div class="toolbar">
+        <div style="position:sticky;top:0;z-index:50;background:var(--bg);padding-bottom:0.75rem;">
+          <div class="section-header">
+            <div class="section-title">Daily Data</div>
+            <div class="section-count" id="dailyCount">0 records</div>
+            <div class="spacer"></div>
+            <button class="btn btn-primary" onclick="openModal('daily')">+ Add Entry</button>
+          </div>
+          <div class="toolbar">
           <input class="search-box" placeholder="Search vehicle, driver, vendor..." id="dailySearch" oninput="applyDailyFilters()" />
           <select class="filter-sel" id="vendorFilter" onchange="applyDailyFilters()">
             <option value="">All vendors</option>
@@ -512,6 +513,7 @@
           </select>
           <input type="date" class="form-input" id="dateFilter" onchange="applyDailyFilters()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:7px 10px;font-size:13px;color:var(--text);font-family:var(--font);outline:none;cursor:pointer;" title="Filter by specific date"/>
           <button class="btn" onclick="clearDailyFilters()" style="font-size:12px;padding:6px 12px;">✕ Clear</button>
+          </div>
         </div>
         <div class="table-wrap">
           <div class="table-scroll"><table id="dailyTable"><thead></thead><tbody></tbody></table></div>
@@ -1611,6 +1613,17 @@ function showPage(id, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
   el.classList.add('active');
+  // Auto-scroll to bottom for daily data so newest entries are visible
+  if (id === 'daily') {
+    setTimeout(() => {
+      const content = document.querySelector('.content');
+      if (content) content.scrollTop = content.scrollHeight;
+    }, 50);
+  } else {
+    // Scroll to top for all other pages
+    const content = document.querySelector('.content');
+    if (content) content.scrollTop = 0;
+  }
 }
 
 async function refreshData() { await loadData(); }
