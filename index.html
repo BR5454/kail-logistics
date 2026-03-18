@@ -1188,7 +1188,12 @@ function renderDriverList(body) {
   function buildCards(list) {
     return list.map(d => {
       const name = d['DRIVER NAME'];
-      const trips = sheets.daily.filter(r => r['DRIVER'] === name).length;
+      const upper = name.toUpperCase();
+      const trips = sheets.daily.filter(r => {
+        if (!r['DRIVER']) return false;
+        const dr = r['DRIVER'].toUpperCase();
+        return dr === upper || dr.includes(upper) || upper.includes(dr);
+      }).length;
       const vehicle = d['VEHICLE'] || d['CUR VEHICLE'] || '—';
       const status = d['status'] || '';
       const statusColor = status === 'active' ? 'var(--accent2)' : 'var(--text3)';
@@ -1224,10 +1229,22 @@ function renderDriverList(body) {
 }
 
 // --- DRIVER DETAIL ---
+function matchDriverTrips(name) {
+  // Try exact match first, then fuzzy (daily has "AMAN BHAI", driver sheet has "AMAN")
+  const exact = sheets.daily.filter(r => r['DRIVER'] === name);
+  if (exact.length > 0) return exact;
+  const upper = name.toUpperCase();
+  return sheets.daily.filter(r => {
+    if (!r['DRIVER']) return false;
+    const d = r['DRIVER'].toUpperCase();
+    return d.includes(upper) || upper.includes(d);
+  });
+}
+
 function openDriverDetail(name) {
   const body = document.getElementById('detailModalBody');
   const dInfo = sheets.drivers.find(r => r['DRIVER NAME'] === name) || {};
-  const trips = sheets.daily.filter(r => r['DRIVER'] === name);
+  const trips = matchDriverTrips(name);
   const totalKm = trips.reduce((s,r) => s + (parseFloat(r['TRIP KM'])||0), 0);
   const totalCng = trips.reduce((s,r) => s + (parseFloat(r['CNG'])||0), 0);
   const totalAmt = trips.reduce((s,r) => s + (parseFloat(r['AMOUNT'])||0), 0);
