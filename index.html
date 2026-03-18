@@ -774,45 +774,51 @@ async function findFile() {
 
 async function loadData() {
   setSyncing(true);
-  if (!fileId) { const ok = await findFile(); if (!ok) { setSyncing(false); return; } }
+  try {
+    if (!fileId) { const ok = await findFile(); if (!ok) { setSyncing(false); return; } }
 
-  const url = `/me/drive/items/${fileId}/content`;
-  const token = await getToken();
-  const res = await fetch(GRAPH + url, { headers: { 'Authorization': 'Bearer ' + token } });
-  const buffer = await res.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const url = `/me/drive/items/${fileId}/content`;
+    const token = await getToken();
+    const res = await fetch(GRAPH + url, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!res.ok) throw new Error('Failed to fetch file: ' + res.status);
+    const buffer = await res.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
 
-  function parseSheet(name) {
-    const ws = wb.Sheets[name];
-    if (!ws) return [];
-    return XLSX.utils.sheet_to_json(ws, { defval: '' });
+    function parseSheet(name) {
+      const ws = wb.Sheets[name];
+      if (!ws) return [];
+      return XLSX.utils.sheet_to_json(ws, { defval: '' });
+    }
+
+    // Parse and strip blank rows
+    sheets.daily   = parseSheet(CONFIG.sheets.daily).filter(r => r['VEHICLE'] && r['VEHICLE'] !== '');
+    sheets.drivers = parseSheet(CONFIG.sheets.drivers).filter(r => r['DRIVER NAME'] && r['DRIVER NAME'] !== '');
+    sheets.static  = parseSheet(CONFIG.sheets.static).filter(r => r['REGISTRATION'] && r['REGISTRATION'] !== '');
+    sheets.adhoc   = parseSheet(CONFIG.sheets.adhoc).filter(r => r['Date'] && r['Vehicle No']);
+
+    filtered.daily   = [...sheets.daily];
+    filtered.drivers = [...sheets.drivers];
+    filtered.static  = [...sheets.static];
+    filtered.adhoc   = [...sheets.adhoc];
+
+    filtered.vehicles = sheets.drivers.filter(r => r['VEHICLE'] || r['CUR VEHICLE']).map(r => ({
+      Vehicle: r['VEHICLE'] || r['CUR VEHICLE'] || '',
+      Driver: r['DRIVER NAME'] || r['DRIVER'] || '',
+      Mobile: r['MOBILE NO'] ? String(Math.round(Number(r['MOBILE NO']))).replace(/,/g,'') : '',
+      Company: r['company'] || r['VENDER'] || '',
+      'Reporting Time': r['REPORTING TIME'] || '',
+      Status: r['status'] || ''
+    })).filter(r => r.Vehicle);
+
+    renderAll();
+    setSyncing(false);
+    document.getElementById('syncText').textContent = 'Synced ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    console.error('loadData error:', err);
+    setSyncing(false);
+    document.getElementById('syncText').textContent = 'Sync failed — try Refresh';
+    document.getElementById('syncDot').style.background = 'var(--danger)';
   }
-
-  // Parse and strip blank rows (Excel often has empty trailing rows)
-  sheets.daily   = parseSheet(CONFIG.sheets.daily).filter(r => r['VEHICLE'] && r['VEHICLE'] !== '');
-  sheets.drivers = parseSheet(CONFIG.sheets.drivers).filter(r => r['DRIVER NAME'] && r['DRIVER NAME'] !== '');
-  sheets.static  = parseSheet(CONFIG.sheets.static).filter(r => r['REGISTRATION'] && r['REGISTRATION'] !== '');
-  sheets.adhoc   = parseSheet(CONFIG.sheets.adhoc).filter(r => r['Date'] && r['Vehicle No']);
-  filtered.adhoc = [...sheets.adhoc];
-  sheets.adhoc   = parseSheet(CONFIG.sheets.adhoc).filter(r => r['Date'] && r['Vehicle No']);
-  filtered.adhoc = [...sheets.adhoc];
-
-  filtered.daily   = [...sheets.daily];
-  filtered.drivers = [...sheets.drivers];
-  filtered.static  = [...sheets.static];
-
-  filtered.vehicles = sheets.drivers.filter(r => r['VEHICLE'] || r['CUR VEHICLE']).map(r => ({
-    Vehicle: r['VEHICLE'] || r['CUR VEHICLE'] || '',
-    Driver: r['DRIVER NAME'] || r['DRIVER'] || '',
-    Mobile: r['MOBILE NO'] ? String(Math.round(Number(r['MOBILE NO']))).replace(/,/g,'') : '',
-    Company: r['company'] || r['VENDER'] || '',
-    'Reporting Time': r['REPORTING TIME'] || '',
-    Status: r['status'] || ''
-  })).filter(r => r.Vehicle);
-
-  renderAll();
-  setSyncing(false);
-  document.getElementById('syncText').textContent = 'Synced ' + new Date().toLocaleTimeString();
 }
 
 function setSyncing(on) {
