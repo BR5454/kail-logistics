@@ -775,7 +775,15 @@ async function findFile() {
 async function loadData() {
   setSyncing(true);
   try {
-    if (!fileId) { const ok = await findFile(); if (!ok) { setSyncing(false); return; } }
+    // Always re-find file on each load to handle token/file changes
+    fileId = null;
+    const ok = await findFile();
+    if (!ok) {
+      setSyncing(false);
+      document.getElementById('syncText').textContent = 'File not found — check OneDrive';
+      document.getElementById('syncDot').style.background = 'var(--danger)';
+      return;
+    }
 
     const url = `/me/drive/items/${fileId}/content`;
     const token = await getToken();
@@ -816,7 +824,14 @@ async function loadData() {
   } catch (err) {
     console.error('loadData error:', err);
     setSyncing(false);
-    document.getElementById('syncText').textContent = 'Sync failed — try Refresh';
+    // If token expired, force re-login
+    const token = localStorage.getItem('at');
+    const exp = parseInt(localStorage.getItem('exp') || '0');
+    if (!token || Date.now() > exp) {
+      document.getElementById('syncText').textContent = 'Session expired — sign out & sign in again';
+    } else {
+      document.getElementById('syncText').textContent = 'Sync failed (' + err.message + ')';
+    }
     document.getElementById('syncDot').style.background = 'var(--danger)';
   }
 }
