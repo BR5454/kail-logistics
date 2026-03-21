@@ -686,10 +686,17 @@
           <div style="font-size:13px;font-weight:600;margin-bottom:1rem;">New Ticket Details</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1rem;">
             <div class="form-group"><label class="form-label">Date</label><input class="form-input" type="date" id="pk-date" value=""/></div>
-            <div class="form-group"><label class="form-label">Vehicle No</label><select class="form-input" id="pk-vehicle"><option value="">Select vehicle</option></select></div>
-            <div class="form-group"><label class="form-label">Driver</label><select class="form-input" id="pk-driver"><option value="">Select driver</option></select></div>
+            <div class="form-group" style="position:relative;">
+              <label class="form-label">Vehicle No</label>
+              <input class="form-input" type="text" id="pk-vehicle-search" placeholder="Type vehicle number..." autocomplete="off"
+                oninput="filterVehicleDropdown(this.value)"
+                onfocus="document.getElementById('pk-vehicle-list').style.display='block'"
+                onblur="setTimeout(()=>document.getElementById('pk-vehicle-list').style.display='none',200)"/>
+              <div id="pk-vehicle-list" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--accent);border-radius:8px;max-height:200px;overflow-y:auto;z-index:100;margin-top:2px;"></div>
+              <input type="hidden" id="pk-vehicle"/>
+            </div>
             <div class="form-group"><label class="form-label">Amount (₹)</label><input class="form-input" type="number" id="pk-amount" placeholder="0"/></div>
-            <div class="form-group full" style="grid-column:1/-1"><label class="form-label">Remarks</label><input class="form-input" type="text" id="pk-remarks" placeholder="e.g. BRTS parking, Airport parking..."/></div>
+            <div class="form-group"><label class="form-label">Remarks</label><input class="form-input" type="text" id="pk-remarks" placeholder="e.g. BRTS parking, Airport..."/></div>
           </div>
           <div id="previewContainer" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1rem;"></div>
           <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -1778,13 +1785,10 @@ function handleParkingFiles(files, append=false) {
   // Set today's date
   document.getElementById('pk-date').value = new Date().toISOString().split('T')[0];
 
-  // Populate vehicle and driver dropdowns
-  const vSel = document.getElementById('pk-vehicle');
-  const dSel = document.getElementById('pk-driver');
+  // Populate vehicle search list
   const vehicles = [...new Set(sheets.static.map(r => r['REGISTRATION']).filter(Boolean))].sort();
-  const drivers = [...new Set(sheets.drivers.map(r => r['DRIVER NAME']).filter(Boolean))].sort();
-  vSel.innerHTML = '<option value="">Select vehicle</option>' + vehicles.map(v => `<option>${v}</option>`).join('');
-  dSel.innerHTML = '<option value="">Select driver</option>' + drivers.map(d => `<option>${d}</option>`).join('');
+  window._parkingVehicles = vehicles;
+  renderVehicleDropdown(vehicles);
 
   renderPendingPreviews();
 }
@@ -1815,6 +1819,32 @@ function cancelUpload() {
   document.getElementById('parkingFileInput').value = '';
 }
 
+function renderVehicleDropdown(list) {
+  const dd = document.getElementById('pk-vehicle-list');
+  if (!dd) return;
+  if (list.length === 0) {
+    dd.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:var(--text3);">No vehicles found</div>';
+    return;
+  }
+  dd.innerHTML = list.map(v => `<div style="padding:8px 12px;font-size:13px;cursor:pointer;color:var(--text);"
+    onmousedown="selectParkingVehicle('${v}')"
+    onmouseover="this.style.background='var(--surface2)'"
+    onmouseout="this.style.background=''">${v}</div>`).join('');
+}
+
+function filterVehicleDropdown(val) {
+  const all = window._parkingVehicles || [];
+  const filtered = val ? all.filter(v => v.toUpperCase().includes(val.toUpperCase())) : all;
+  renderVehicleDropdown(filtered);
+  document.getElementById('pk-vehicle').value = ''; // clear selection until picked
+}
+
+function selectParkingVehicle(v) {
+  document.getElementById('pk-vehicle-search').value = v;
+  document.getElementById('pk-vehicle').value = v;
+  document.getElementById('pk-vehicle-list').style.display = 'none';
+}
+
 async function saveTicketsToOneDrive() {
   if (pendingFiles.length === 0) return;
   const btn = document.getElementById('saveTicketBtn');
@@ -1823,27 +1853,41 @@ async function saveTicketsToOneDrive() {
 
   const token = await getToken();
   const date = document.getElementById('pk-date').value || new Date().toISOString().split('T')[0];
-  const vehicle = document.getElementById('pk-vehicle').value || 'UNKNOWN';
-  const driver = document.getElementById('pk-driver').value || 'UNKNOWN';
+  const vehicle = document.getElementById('pk-vehicle').value || document.getElementById('pk-vehicle-search').value || 'UNKNOWN';
   const amount = document.getElementById('pk-amount').value || '0';
   const remarks = document.getElementById('pk-remarks').value || '';
 
-  // Create folder path: Parking Tickets/YYYY-MM/
-  const folderPath = `Parking Tickets/${date.substring(0,7)}`;
+  if (!vehicle || vehicle === 'UNKNOWN') {
+    alert('Please select a vehicle number first!');
+    btn.textContent = '💾 Save to OneDrive';
+    btn.disabled = false;
+    return;
+  }
+
+  // Build folder path:
+  // Parking Tickets / March-2026 / GJ19Z1656 / 1-15-March-2026 OR 16-31-March-2026
+  const d = new Date(date);
+  const day = d.getDate();
+  const monthName = d.toLocaleString('en-IN', { month: 'long' });
+  const year = d.getFullYear();
+  const daysInMonth = new Date(year, d.getMonth() + 1, 0).getDate();
+
+  const monthFolder = `${monthName}-${year}`;
+  const halfFolder = day <= 15 ? `1-15-${monthName}-${year}` : `16-${daysInMonth}-${monthName}-${year}`;
+  const folderPath = `Parking Tickets/${monthFolder}/${vehicle}/${halfFolder}`;
 
   let uploaded = 0;
   for (let i = 0; i < pendingFiles.length; i++) {
     const file = pendingFiles[i];
-    const ext = file.name.split('.').pop();
-    const fileName = `${date}_${vehicle}_${driver}_₹${amount}${remarks ? '_' + remarks.replace(/\s+/g,'_') : ''}_${i+1}.${ext}`;
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const fileName = `${date}_${vehicle}_Rs${amount}${remarks ? '_' + remarks.replace(/[\s/\\:*?"<>|]+/g,'_') : ''}_${i+1}.${ext}`;
 
     try {
-      // Upload to OneDrive folder
       const uploadRes = await fetch(
         `${GRAPH}/me/drive/root:/${folderPath}/${fileName}:/content`,
         {
           method: 'PUT',
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': file.type },
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': file.type || 'image/png' },
           body: file
         }
       );
@@ -1857,7 +1901,14 @@ async function saveTicketsToOneDrive() {
   btn.disabled = false;
 
   if (uploaded > 0) {
-    alert(`✅ ${uploaded} ticket(s) saved to OneDrive!\nFolder: ${folderPath}`);
+    const d2 = new Date(document.getElementById('pk-date').value);
+    const mn = d2.toLocaleString('en-IN',{month:'long'});
+    const yr = d2.getFullYear();
+    const dy = d2.getDate();
+    const dim = new Date(yr, d2.getMonth()+1, 0).getDate();
+    const hf = dy <= 15 ? `1-15-${mn}-${yr}` : `16-${dim}-${mn}-${yr}`;
+    const veh2 = document.getElementById('pk-vehicle').value || document.getElementById('pk-vehicle-search').value;
+    alert('✅ ' + uploaded + ' ticket(s) saved!\n\nOneDrive path:\nParking Tickets → ' + mn+'-'+yr + ' → ' + veh2 + ' → ' + hf);
     cancelUpload();
     loadParkingTickets();
   } else {
