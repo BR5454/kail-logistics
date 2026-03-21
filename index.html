@@ -704,8 +704,8 @@
           ondragleave="this.classList.remove('dragover')"
           ondrop="event.preventDefault();this.classList.remove('dragover');handleParkingFiles(event.dataTransfer.files)">
           <div class="upload-zone-icon">📸</div>
-          <div class="upload-zone-text">Click or drag & drop parking ticket photos here</div>
-          <div class="upload-zone-sub">Supports JPG, PNG, HEIC — multiple files at once</div>
+          <div class="upload-zone-text">Click, drag & drop, or press <kbd style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px;">Ctrl+V</kbd> to paste</div>
+          <div class="upload-zone-sub">Snip a photo on WhatsApp → Ctrl+V here · Supports JPG, PNG, HEIC</div>
         </div>
 
         <!-- Ticket gallery -->
@@ -1706,13 +1706,69 @@ function clearAdhocFilters() {
 // ============================================================
 let pendingFiles = [];
 
+// Ctrl+V paste support — works anywhere on Parking Tickets page
+document.addEventListener('paste', function(e) {
+  const activePage = document.querySelector('.page.active');
+  if (!activePage || activePage.id !== 'page-parking') return;
+
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+
+  const imageFiles = [];
+  for (let item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) {
+        // Give it a meaningful name with timestamp
+        const ts = new Date().toISOString().replace(/[:.]/g,'-').substring(0,19);
+        const ext = item.type.split('/')[1] || 'png';
+        Object.defineProperty(file, 'name', { value: `pasted_${ts}.${ext}` });
+        imageFiles.push(file);
+      }
+    }
+  }
+
+  if (imageFiles.length === 0) return;
+  e.preventDefault();
+
+  // Open form if not open
+  const form = document.getElementById('uploadForm');
+  if (!form.classList.contains('open')) {
+    handleParkingFiles(imageFiles, false);
+  } else {
+    // Already open — just add to existing
+    pendingFiles = pendingFiles.concat(imageFiles);
+    renderPendingPreviews();
+  }
+
+  // Show a quick toast
+  showPasteToast(imageFiles.length);
+});
+
+function showPasteToast(count) {
+  let toast = document.getElementById('pasteToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'pasteToast';
+    toast.style = 'position:fixed;bottom:2rem;right:2rem;background:var(--accent);color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:500;opacity:0;transition:opacity .3s;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = `📋 ${count} image${count>1?'s':''} pasted! Fill in details and save.`;
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+}
+
 function triggerParkingUpload() {
   document.getElementById('parkingFileInput').click();
 }
 
-function handleParkingFiles(files) {
+function handleParkingFiles(files, append=false) {
   if (!files || files.length === 0) return;
-  pendingFiles = Array.from(files);
+  if (append) {
+    pendingFiles = pendingFiles.concat(Array.from(files));
+  } else {
+    pendingFiles = Array.from(files);
+  }
 
   // Show upload form
   const form = document.getElementById('uploadForm');
@@ -1730,16 +1786,22 @@ function handleParkingFiles(files) {
   vSel.innerHTML = '<option value="">Select vehicle</option>' + vehicles.map(v => `<option>${v}</option>`).join('');
   dSel.innerHTML = '<option value="">Select driver</option>' + drivers.map(d => `<option>${d}</option>`).join('');
 
-  // Show previews
+  renderPendingPreviews();
+}
+
+function renderPendingPreviews() {
   const container = document.getElementById('previewContainer');
+  if (!container) return;
   container.innerHTML = '';
   pendingFiles.forEach((file, i) => {
     const reader = new FileReader();
     reader.onload = e => {
-      container.innerHTML += `<div style="position:relative;">
-        <img src="${e.target.result}" style="height:100px;width:auto;border-radius:6px;object-fit:cover;border:1px solid var(--border);" title="${file.name}"/>
-        <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:3px;">${file.name.substring(0,15)}...</div>
-      </div>`;
+      const div = document.createElement('div');
+      div.style = 'position:relative;';
+      div.innerHTML = `<img src="${e.target.result}" style="height:100px;width:auto;border-radius:6px;object-fit:cover;border:1px solid var(--border);cursor:pointer;" title="${file.name}" onclick="this.parentElement.remove();pendingFiles.splice(${i},1)"/>
+        <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:3px;">${file.name.length > 15 ? file.name.substring(0,15)+'...' : file.name}</div>
+        <div style="font-size:9px;color:var(--danger);text-align:center;cursor:pointer;" onclick="pendingFiles.splice(${i},1);renderPendingPreviews()">✕ remove</div>`;
+      container.appendChild(div);
     };
     reader.readAsDataURL(file);
   });
