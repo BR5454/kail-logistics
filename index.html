@@ -676,7 +676,23 @@
             <div class="section-title">🎫 Parking Tickets</div>
             <div class="section-count" id="parkingCount">0 tickets</div>
             <div class="spacer"></div>
+            <button class="btn" onclick="downloadParkingPDF()" id="pdfBtn" style="display:none;">📄 Download PDF</button>
             <button class="btn btn-primary" onclick="triggerParkingUpload()">+ Upload Ticket</button>
+          </div>
+          <!-- Filters -->
+          <div class="toolbar" id="parkingFilters" style="display:none;">
+            <select class="filter-sel" id="pk-filter-vehicle" onchange="applyParkingFilters()">
+              <option value="">All vehicles</option>
+            </select>
+            <select class="filter-sel" id="pk-filter-month" onchange="applyParkingFilters()">
+              <option value="">All months</option>
+            </select>
+            <select class="filter-sel" id="pk-filter-half" onchange="applyParkingFilters()">
+              <option value="">Both cycles</option>
+              <option value="1-15">1–15 (First half)</option>
+              <option value="16-">16–End (Second half)</option>
+            </select>
+            <button class="btn" onclick="clearParkingFilters()" style="font-size:12px;padding:6px 12px;">✕ Clear</button>
           </div>
         </div>
         <input type="file" id="parkingFileInput" accept="image/*" multiple style="display:none" onchange="handleParkingFiles(this.files)"/>
@@ -1916,69 +1932,231 @@ async function saveTicketsToOneDrive() {
   }
 }
 
+// Store all loaded ticket files globally for filtering
+window._allParkingFiles = [];
+
+async function fetchFolderFilesDeep(token, folderId, depth=0) {
+  // Recursively fetch all image files up to 4 levels deep
+  if (depth > 4) return [];
+  const res = await fetch(`${GRAPH}/me/drive/items/${folderId}/children?$top=200&$expand=thumbnails`, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  const items = data.value || [];
+  let files = items.filter(f => f.file && f.file.mimeType && f.file.mimeType.startsWith('image/'));
+  const folders = items.filter(f => f.folder);
+  for (const folder of folders) {
+    const subFiles = await fetchFolderFilesDeep(token, folder.id, depth+1);
+    // Tag each file with folder path info
+    subFiles.forEach(sf => {
+      if (!sf._folderPath) sf._folderPath = folder.name;
+    });
+    files = files.concat(subFiles);
+  }
+  return files;
+}
+
 async function loadParkingTickets() {
   const token = await getToken();
   const gallery = document.getElementById('parkingGallery');
   const countEl = document.getElementById('parkingCount');
-  gallery.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text3);font-size:13px;">Loading tickets...</div>';
+  gallery.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text3);font-size:13px;">⏳ Loading tickets from OneDrive...</div>';
 
   try {
-    // List files in Parking Tickets folder
-    const res = await fetch(`${GRAPH}/me/drive/root:/Parking Tickets:/children?$orderby=lastModifiedDateTime desc&$top=200`, {
+    // Get root Parking Tickets folder ID
+    const rootRes = await fetch(`${GRAPH}/me/drive/root:/Parking Tickets`, {
       headers: { 'Authorization': 'Bearer ' + token }
     });
-
-    if (!res.ok) {
+    if (!rootRes.ok) {
       gallery.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text3);font-size:13px;">No tickets uploaded yet. Upload your first parking ticket above.</div>';
       if (countEl) countEl.textContent = '0 tickets';
       return;
     }
-
-    const data = await res.json();
-    // Flatten subfolders
-    let files = (data.value || []).filter(f => f.file && f.file.mimeType && f.file.mimeType.startsWith('image/'));
-
-    // Also check subfolders (month folders)
-    const folders = (data.value || []).filter(f => f.folder);
-    for (const folder of folders) {
-      const subRes = await fetch(`${GRAPH}/me/drive/items/${folder.id}/children?$orderby=lastModifiedDateTime desc&$top=100`, {
-        headers: { 'Authorization': 'Bearer ' + token }
-      });
-      if (subRes.ok) {
-        const subData = await subRes.json();
-        const imgs = (subData.value || []).filter(f => f.file && f.file.mimeType && f.file.mimeType.startsWith('image/'));
-        files = files.concat(imgs);
-      }
-    }
+    const rootData = await rootRes.json();
+    const files = await fetchFolderFilesDeep(token, rootData.id);
 
     if (files.length === 0) {
       gallery.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text3);font-size:13px;">No tickets uploaded yet. Upload your first parking ticket above.</div>';
       if (countEl) countEl.textContent = '0 tickets';
+      document.getElementById('parkingFilters').style.display = 'none';
+      document.getElementById('pdfBtn').style.display = 'none';
       return;
     }
 
-    if (countEl) countEl.textContent = files.length + ' tickets';
+    window._allParkingFiles = files;
+    populateParkingFilters(files);
+    renderParkingGallery(files);
+    document.getElementById('parkingFilters').style.display = 'flex';
+    document.getElementById('pdfBtn').style.display = '';
 
-    gallery.innerHTML = '<div class="ticket-grid">' + files.map(f => {
-      const thumb = f.thumbnails && f.thumbnails[0] ? f.thumbnails[0].medium.url : '';
-      const name = f.name.replace(/\.[^.]+$/, '');
-      const date = f.lastModifiedDateTime ? new Date(f.lastModifiedDateTime).toLocaleDateString('en-IN') : '';
-      return `<div class="ticket-card">
-        <img src="${thumb || ''}" alt="${f.name}" onclick="openLightbox('${f['@microsoft.graph.downloadUrl'] || ''}', '${f.name}')" loading="lazy"/>
-        <div class="ticket-card-info">
-          <div class="ticket-card-name" title="${name}">${name}</div>
-          <div class="ticket-card-meta">${date}</div>
-          <div class="ticket-card-actions">
-            <a class="ticket-btn" href="${f['@microsoft.graph.downloadUrl']}" download="${f.name}" target="_blank">⬇ Download</a>
-            <button class="ticket-btn" onclick="openLightbox('${f['@microsoft.graph.downloadUrl'] || ''}', '${f.name}')">🔍 View</button>
-          </div>
-        </div>
-      </div>`;
-    }).join('') + '</div>';
   } catch(e) {
     console.error(e);
     gallery.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--danger);font-size:13px;">Error loading tickets. Try refreshing.</div>';
   }
+}
+
+function populateParkingFilters(files) {
+  // Extract vehicle and month from filename: 2026-03-05_GJ19Z1656_Rs150_...
+  const vehicles = new Set();
+  const months = new Set();
+  files.forEach(f => {
+    const parts = f.name.split('_');
+    if (parts.length >= 2) {
+      vehicles.add(parts[1]);
+      if (parts[0].length >= 7) months.add(parts[0].substring(0,7)); // YYYY-MM
+    }
+  });
+
+  const vSel = document.getElementById('pk-filter-vehicle');
+  vSel.innerHTML = '<option value="">All vehicles</option>' + [...vehicles].sort().map(v => `<option value="${v}">${v}</option>`).join('');
+
+  const mSel = document.getElementById('pk-filter-month');
+  mSel.innerHTML = '<option value="">All months</option>' + [...months].sort().reverse().map(m => {
+    const [y,mo] = m.split('-');
+    const label = new Date(y, mo-1).toLocaleString('en-IN',{month:'long',year:'numeric'});
+    return `<option value="${m}">${label}</option>`;
+  }).join('');
+}
+
+function applyParkingFilters() {
+  const vehicle = document.getElementById('pk-filter-vehicle').value;
+  const month   = document.getElementById('pk-filter-month').value;
+  const half    = document.getElementById('pk-filter-half').value;
+
+  let files = window._allParkingFiles || [];
+
+  if (vehicle) files = files.filter(f => f.name.includes('_' + vehicle + '_'));
+  if (month)   files = files.filter(f => f.name.startsWith(month));
+  if (half) {
+    files = files.filter(f => {
+      const dateStr = f.name.split('_')[0];
+      const day = parseInt((dateStr.split('-')[2])||'0');
+      if (half === '1-15') return day >= 1 && day <= 15;
+      if (half === '16-')  return day >= 16;
+      return true;
+    });
+  }
+
+  renderParkingGallery(files);
+}
+
+function clearParkingFilters() {
+  document.getElementById('pk-filter-vehicle').value = '';
+  document.getElementById('pk-filter-month').value = '';
+  document.getElementById('pk-filter-half').value = '';
+  renderParkingGallery(window._allParkingFiles || []);
+}
+
+function renderParkingGallery(files) {
+  const gallery = document.getElementById('parkingGallery');
+  const countEl = document.getElementById('parkingCount');
+  if (countEl) countEl.textContent = files.length + ' tickets';
+
+  if (files.length === 0) {
+    gallery.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text3);font-size:13px;">No tickets match the selected filters.</div>';
+    return;
+  }
+
+  gallery.innerHTML = '<div class="ticket-grid">' + files.map((f,i) => {
+    const thumb = f.thumbnails && f.thumbnails[0] ? f.thumbnails[0].medium.url : '';
+    const name = f.name.replace(/\.[^.]+$/, '');
+    const dlUrl = f['@microsoft.graph.downloadUrl'] || '';
+    // Parse info from filename
+    const parts = f.name.split('_');
+    const dateStr = parts[0] || '';
+    const veh = parts[1] || '';
+    const amt = parts[2] || '';
+    return `<div class="ticket-card">
+      ${thumb ? `<img src="${thumb}" alt="${f.name}" onclick="openLightbox('${dlUrl}','${f.name.replace(/'/g,'')}')" loading="lazy"/>` : `<div style="height:150px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:30px;cursor:pointer;" onclick="openLightbox('${dlUrl}','${f.name.replace(/'/g,'')}')">🎫</div>`}
+      <div class="ticket-card-info">
+        <div class="ticket-card-name" title="${name}">${veh || name}</div>
+        <div class="ticket-card-meta">${dateStr} · ${amt}</div>
+        <div class="ticket-card-actions">
+          <a class="ticket-btn" href="${dlUrl}" target="_blank">⬇ Download</a>
+          <button class="ticket-btn" onclick="openLightbox('${dlUrl}','${f.name.replace(/'/g,'')}')">🔍 View</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+async function downloadParkingPDF() {
+  const vehicle = document.getElementById('pk-filter-vehicle').value;
+  const month   = document.getElementById('pk-filter-month').value;
+  const half    = document.getElementById('pk-filter-half').value;
+
+  let files = window._allParkingFiles || [];
+  if (vehicle) files = files.filter(f => f.name.includes('_' + vehicle + '_'));
+  if (month)   files = files.filter(f => f.name.startsWith(month));
+  if (half) {
+    files = files.filter(f => {
+      const day = parseInt((f.name.split('_')[0].split('-')[2])||'0');
+      if (half === '1-15') return day >= 1 && day <= 15;
+      if (half === '16-')  return day >= 16;
+      return true;
+    });
+  }
+
+  if (files.length === 0) { alert('No tickets to download. Please adjust filters.'); return; }
+
+  const btn = document.getElementById('pdfBtn');
+  btn.textContent = '⏳ Building PDF...';
+  btn.disabled = true;
+
+  try {
+    // Build HTML page with all images for printing as PDF
+    const token = await getToken();
+    const label = [vehicle||'All Vehicles', month||'All Months', half==='1-15'?'1-15':half==='16-'?'16-End':'Both Cycles'].filter(Boolean).join(' · ');
+
+    // Fetch each image as base64
+    const imgTags = [];
+    for (let i = 0; i < files.length; i++) {
+      btn.textContent = `⏳ Loading ${i+1}/${files.length}...`;
+      const dlUrl = files[i]['@microsoft.graph.downloadUrl'];
+      if (!dlUrl) continue;
+      try {
+        const imgRes = await fetch(dlUrl);
+        const blob = await imgRes.blob();
+        const b64 = await new Promise(res => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.readAsDataURL(blob);
+        });
+        const parts = files[i].name.split('_');
+        const caption = `${parts[0]||''} · ${parts[1]||''} · ${parts[2]||''}`;
+        imgTags.push(`<div class="ticket-page">
+          <div class="caption">${caption}</div>
+          <img src="${b64}" alt="${files[i].name}"/>
+        </div>`);
+      } catch(e) { console.warn('Skip', files[i].name); }
+    }
+
+    // Open print window
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><title>Parking Tickets — ${label}</title>
+    <style>
+      body { margin:0; font-family: Arial, sans-serif; background:#fff; }
+      h1 { text-align:center; font-size:16px; padding:12px; border-bottom:2px solid #333; margin:0; }
+      .ticket-page { page-break-after: always; padding:16px; text-align:center; }
+      .ticket-page:last-child { page-break-after: avoid; }
+      .caption { font-size:13px; font-weight:bold; margin-bottom:8px; color:#333; }
+      img { max-width:100%; max-height:90vh; object-fit:contain; border:1px solid #ddd; border-radius:4px; }
+      @media print { body { margin:0; } }
+    </style></head><body>
+    <h1>🎫 Parking Tickets — ${label} (${imgTags.length} tickets)</h1>
+    ${imgTags.join('')}
+    <script>window.onload = () => { window.print(); }<\/script>
+    </body></html>`);
+    win.document.close();
+
+  } catch(e) {
+    console.error(e);
+    alert('PDF generation failed. Try again.');
+  }
+
+  btn.textContent = '📄 Download PDF';
+  btn.disabled = false;
 }
 
 function openLightbox(url, name) {
