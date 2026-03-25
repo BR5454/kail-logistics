@@ -1310,19 +1310,29 @@ function renderDriverList(body) {
     return list.map(d => {
       const name = d['DRIVER NAME'];
       const upper = name.toUpperCase();
-      const trips = sheets.daily.filter(r => {
+      const driverTrips = sheets.daily.filter(r => {
         if (!r['DRIVER']) return false;
         const dr = r['DRIVER'].toUpperCase();
         return dr === upper || dr.includes(upper) || upper.includes(dr);
-      }).length;
-      const vehicle = d['VEHICLE'] || d['CUR VEHICLE'] || '—';
+      });
+      const trips = driverTrips.length;
+      const assignedVehicle = d['VEHICLE'] || d['CUR VEHICLE'] || '';
+      const drivenVehicles = [...new Set(driverTrips.map(r => r['VEHICLE']).filter(Boolean))];
+      const allVehicles = assignedVehicle
+        ? [assignedVehicle, ...drivenVehicles.filter(v => v !== assignedVehicle)]
+        : drivenVehicles;
       const status = d['status'] || '';
       const statusColor = status === 'active' ? 'var(--accent2)' : 'var(--text3)';
-      return `<div class="driver-card" onclick="openDriverDetail('${name.replace(/'/g,"\\'")}')">
-        <div class="driver-card-name">👤 ${name}</div>
-        <div class="driver-card-mobile">${d['MOBILE NO'] ? String(Math.round(Number(d['MOBILE NO']))).replace(/,/g,'') : '—'}</div>
-        <div class="driver-card-vehicle">🚛 ${vehicle} · Trips: ${trips} ${status ? `· <span style="color:${statusColor}">${status}</span>` : ''}</div>
-      </div>`;
+      const vTags = allVehicles.slice(0,3).map(v =>
+        '<span style="background:rgba(61,126,255,.12);border:1px solid rgba(61,126,255,.25);border-radius:4px;padding:1px 5px;font-size:10px;color:var(--accent);margin-right:2px;">' + v + '</span>'
+      ).join('') + (allVehicles.length > 3 ? '<span style="font-size:10px;color:var(--text3);">+' + (allVehicles.length-3) + ' more</span>' : '');
+      const safeName = name.replace(/'/g, "\\'");
+      return '<div class="driver-card" onclick="openDriverDetail(\'' + safeName + '\')">'
+        + '<div class="driver-card-name">👤 ' + name + '</div>'
+        + '<div class="driver-card-mobile">' + (d['MOBILE NO'] ? String(Math.round(Number(d['MOBILE NO']))).replace(/,/g,'') : '—') + '</div>'
+        + '<div style="margin-top:5px;flex-wrap:wrap;display:flex;gap:2px;align-items:center;">' + (vTags || '<span style="color:var(--text3);font-size:10px;">No trips yet</span>') + '</div>'
+        + '<div class="driver-card-vehicle" style="margin-top:4px;">Trips: ' + trips + (status ? ' · <span style="color:' + statusColor + '">' + status + '</span>' : '') + '</div>'
+        + '</div>';
     }).join('');
   }
 
@@ -1391,7 +1401,7 @@ function openDriverDetail(name) {
       <div class="detail-modal-icon green">👤</div>
       <div>
         <div class="detail-modal-title">${name}</div>
-        <div class="detail-modal-sub">📞 ${dInfo['MOBILE NO'] ? String(Math.round(Number(dInfo['MOBILE NO']))).replace(/,/g,'') : '—'} · Vehicle: ${dInfo['VEHICLE']||dInfo['CUR VEHICLE']||'—'} · Status: <span style="color:${dInfo['status']==='active'?'var(--accent2)':'var(--text3)'}">${dInfo['status']||'—'}</span></div>
+        <div class="detail-modal-sub">📞 ${dInfo['MOBILE NO'] ? String(Math.round(Number(dInfo['MOBILE NO']))).replace(/,/g,'') : '—'} · Status: <span style="color:${dInfo['status']==='active'?'var(--accent2)':'var(--text3)'}">${dInfo['status']||'—'}</span></div>
       </div>
       <div style="flex:1"></div>
       <button class="btn" onclick="openDetailModal('drivers')" style="font-size:12px;padding:5px 10px;">← Back</button>
@@ -1403,15 +1413,34 @@ function openDriverDetail(name) {
       <div class="detail-stat"><div class="detail-stat-label">Total CNG</div><div class="detail-stat-value">${Math.abs(Math.round(totalCng)).toLocaleString()}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Total Amount</div><div class="detail-stat-value">₹${Math.round(totalAmt).toLocaleString()}</div></div>
     </div>
-    <div style="font-size:13px;font-weight:600;margin-bottom:.75rem;">Trip History</div>
+    <div style="margin-bottom:1rem;">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Vehicles Driven</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;" id="driverVehicleTags">
+        ${[...new Set(trips.map(r=>r['VEHICLE']).filter(Boolean))].map(v =>
+          '<span style="background:rgba(61,126,255,.12);border:1px solid rgba(61,126,255,.3);border-radius:6px;padding:3px 10px;font-size:12px;color:var(--accent);cursor:pointer;font-family:var(--mono);" onclick="filterDriverTripsByVehicle(\'' + v + '\', this)">' + v + '</span>'
+        ).join('')}
+        <span style="background:rgba(0,200,150,.1);border:1px solid rgba(0,200,150,.3);border-radius:6px;padding:3px 10px;font-size:12px;color:var(--accent2);cursor:pointer;" onclick="filterDriverTripsByVehicle('', null)">All Vehicles</span>
+      </div>
+    </div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:.75rem;">Trip History <span id="driverTripVehicleLabel" style="font-size:11px;color:var(--accent);font-weight:400;font-family:var(--mono);"></span></div>
     <div class="table-wrap">
       <div class="table-scroll">
         <table>
           <thead><tr><th>DATE</th><th>VEHICLE</th><th>VENDOR</th><th>TRIP KM</th><th>CNG</th><th>AMOUNT</th></tr></thead>
-          <tbody>${buildRows(trips)}</tbody>
+          <tbody id="driverTripBody">${buildRows(trips)}</tbody>
         </table>
       </div>
     </div>`;
+
+  window._currentDriverTrips = trips;
+  window._buildDriverRows = buildRows;
+  window.filterDriverTripsByVehicle = function(vehicle, el) {
+    const data = vehicle ? window._currentDriverTrips.filter(r => r['VEHICLE'] === vehicle) : window._currentDriverTrips;
+    document.getElementById('driverTripBody').innerHTML = window._buildDriverRows(data);
+    document.getElementById('driverTripVehicleLabel').textContent = vehicle ? '— ' + vehicle : '';
+    document.querySelectorAll('#driverVehicleTags span').forEach(s => { s.style.fontWeight='400'; s.style.borderWidth='1px'; });
+    if (el) { el.style.fontWeight='700'; el.style.borderWidth='2px'; }
+  };
 }
 
 // --- TRIPS THIS MONTH ---
