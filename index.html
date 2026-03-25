@@ -984,7 +984,7 @@ function renderMetrics() {
     const d = r['DATE'] ? new Date(r['DATE']) : null;
     return d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
-  const totalKm = thisMonth.reduce((s, r) => s + (parseFloat(r['TRIP KM']) || 0), 0);
+  const totalKm = thisMonth.reduce((s, r) => s + Math.abs(parseFloat(r['TRIP KM']) || 0), 0);
   const uniqueVehicles = [...new Set(sheets.static.map(r => r['REGISTRATION']).filter(Boolean))];
   const uniqueDrivers = [...new Set(sheets.drivers.map(r => r['DRIVER NAME']).filter(Boolean))];
 
@@ -1001,7 +1001,7 @@ function renderTable(tableId, data, cols, countId) {
   if (countId) document.getElementById(countId).textContent = validData.length + ' records';
   table.querySelector('thead').innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
   if (validData.length === 0) { table.querySelector('tbody').innerHTML = '<tr><td colspan="'+cols.length+'" class="no-data">No data found</td></tr>'; return; }
-  table.querySelector('tbody').innerHTML = validData.slice(0, 500).map(row => {
+  table.querySelector('tbody').innerHTML = validData.slice(0, 2000).map(row => {
     return '<tr>' + cols.map(col => {
       let val = row[col];
       if (val instanceof Date) val = val.toLocaleDateString('en-IN');
