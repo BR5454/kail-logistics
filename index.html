@@ -472,6 +472,9 @@
       <div class="nav-item active" onclick="showPage('dashboard', this)">
         <span class="nav-icon">📊</span> Dashboard
       </div>
+      <div class="nav-item" onclick="showPage('morning', this)">
+        <span class="nav-icon">🌅</span> Morning Summary
+      </div>
       <div class="nav-section">Data</div>
       <div class="nav-item" onclick="showPage('daily', this)">
         <span class="nav-icon">📅</span> Daily Data
@@ -604,6 +607,89 @@
         </div>
         <div class="table-wrap">
           <div class="table-scroll"><table id="staticTable"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- MORNING SUMMARY -->
+      <div class="page" id="page-morning">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:20px;font-weight:700;" id="morningGreeting">Good Morning 🌅</div>
+            <div style="font-size:13px;color:var(--text2);margin-top:3px;" id="morningDate"></div>
+          </div>
+          <button class="btn btn-primary" onclick="renderMorningSummary()" style="font-size:13px;">↻ Refresh Summary</button>
+        </div>
+
+        <!-- Status Cards Row -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.5rem;">
+          <div class="metric-card green">
+            <div class="metric-label">Active Drivers Today</div>
+            <div class="metric-value" id="ms-active">—</div>
+            <div class="metric-sub" id="ms-active-sub"></div>
+          </div>
+          <div class="metric-card accent">
+            <div class="metric-label">Vehicles Running</div>
+            <div class="metric-value" id="ms-running">—</div>
+            <div class="metric-sub" id="ms-running-sub"></div>
+          </div>
+          <div class="metric-card" style="border-color:rgba(245,158,11,.3)">
+            <div class="metric-label">Day Off Today</div>
+            <div class="metric-value" id="ms-dayoff">—</div>
+            <div class="metric-sub" id="ms-dayoff-sub"></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Today's KM</div>
+            <div class="metric-value" id="ms-km">—</div>
+            <div class="metric-sub" id="ms-km-sub"></div>
+          </div>
+        </div>
+
+        <!-- Two column layout -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:1.5rem;">
+
+          <!-- Active Drivers -->
+          <div class="table-wrap">
+            <div style="padding:.85rem 1rem;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;">
+              <span style="color:var(--accent2);">✅</span> Active Drivers
+            </div>
+            <div id="ms-active-list" style="max-height:320px;overflow-y:auto;"></div>
+          </div>
+
+          <!-- Day Off / No Entry -->
+          <div class="table-wrap">
+            <div style="padding:.85rem 1rem;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;">
+              <span style="color:var(--warn);">⚠️</span> Day Off / No Data Today
+            </div>
+            <div id="ms-dayoff-list" style="max-height:320px;overflow-y:auto;"></div>
+          </div>
+        </div>
+
+        <!-- Today's Trip Summary Table -->
+        <div class="section-header">
+          <div class="section-title">📋 Today's Trips</div>
+          <div class="section-count" id="ms-trips-count">0 trips</div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table id="ms-trips-table"><thead></thead><tbody></tbody></table>
+          </div>
+        </div>
+
+        <!-- Vendor breakdown -->
+        <div style="margin-top:1.5rem;">
+          <div class="section-header"><div class="section-title">🏢 Today by Vendor</div></div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;" id="ms-vendor-breakdown"></div>
+        </div>
+
+        <!-- Quick links -->
+        <div style="margin-top:1.5rem;padding:1rem 1.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">
+          <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem;">Quick Actions</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="showPageByName('daily')" style="font-size:13px;">📅 Add Daily Entry</button>
+            <button class="btn" onclick="showPageByName('parking')" style="font-size:13px;">🎫 Upload Parking Ticket</button>
+            <button class="btn" onclick="window.open('http://43.204.20.184/jsp/index.html','_blank')" style="font-size:13px;">📍 Open GPS Tracking</button>
+            <button class="btn" onclick="showPageByName('drivers')" style="font-size:13px;">👤 View All Drivers</button>
+          </div>
         </div>
       </div>
 
@@ -1754,6 +1840,142 @@ function clearAdhocFilters() {
 }
 
 // ============================================================
+// MORNING SUMMARY
+// ============================================================
+function renderMorningSummary() {
+  const now = new Date();
+  const hour = now.getHours();
+
+  // Greeting based on time
+  let greeting = hour < 12 ? 'Good Morning 🌅' : hour < 17 ? 'Good Afternoon ☀️' : 'Good Evening 🌙';
+  const el = document.getElementById('morningGreeting');
+  if (el) el.textContent = greeting + ', Babu!';
+  const dateEl = document.getElementById('morningDate');
+  if (dateEl) dateEl.textContent = now.toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+  // Get today's date string for matching
+  const todayStr = now.toLocaleDateString('en-IN');
+  const todayEntries = sheets.daily.filter(r => {
+    const d = r['DATE'] ? new Date(r['DATE']) : null;
+    return d && d.toLocaleDateString('en-IN') === todayStr;
+  });
+
+  // Active drivers today (have an entry that is NOT day off)
+  const activeTodayEntries = todayEntries.filter(r => {
+    const v = (r['VENDOR']||'').toUpperCase();
+    return !v.includes('DAY OFF') && r['VEHICLE'];
+  });
+  const dayOffEntries = todayEntries.filter(r => {
+    const v = (r['VENDOR']||'').toUpperCase();
+    return v.includes('DAY OFF') || v.includes('DAY OFF BY DRIVER');
+  });
+
+  const uniqueActiveVehicles = [...new Set(activeTodayEntries.map(r=>r['VEHICLE']).filter(Boolean))];
+  const uniqueActiveDrivers = [...new Set(activeTodayEntries.map(r=>r['DRIVER']).filter(Boolean))];
+  const totalKmToday = activeTodayEntries.reduce((s,r) => s + Math.abs(parseFloat(r['TRIP KM'])||0), 0);
+
+  // All active drivers from driver sheet
+  const allActiveDrivers = sheets.drivers.filter(r => r['status'] === 'active' && r['DRIVER NAME']);
+
+  // Which active drivers have NO entry today at all
+  const hasEntryToday = new Set(todayEntries.map(r => r['VEHICLE']).filter(Boolean));
+  const noEntryDrivers = allActiveDrivers.filter(d => {
+    const veh = d['VEHICLE'] || d['CUR VEHICLE'] || '';
+    return veh && !hasEntryToday.has(veh);
+  });
+
+  // Update metric cards
+  document.getElementById('ms-active').textContent = uniqueActiveVehicles.length;
+  document.getElementById('ms-active-sub').textContent = uniqueActiveDrivers.length + ' drivers working';
+  document.getElementById('ms-running').textContent = uniqueActiveVehicles.length;
+  document.getElementById('ms-running-sub').textContent = 'out of ' + sheets.static.length + ' total';
+  document.getElementById('ms-dayoff').textContent = dayOffEntries.length + noEntryDrivers.length;
+  document.getElementById('ms-dayoff-sub').textContent = dayOffEntries.length + ' day off · ' + noEntryDrivers.length + ' no entry';
+  document.getElementById('ms-km').textContent = Math.round(totalKmToday).toLocaleString();
+  document.getElementById('ms-km-sub').textContent = 'km covered today';
+
+  // Active drivers list
+  const activeList = document.getElementById('ms-active-list');
+  if (activeList) {
+    if (activeTodayEntries.length === 0) {
+      activeList.innerHTML = '<div style="padding:1rem;color:var(--text3);font-size:13px;text-align:center;">No entries yet for today</div>';
+    } else {
+      activeList.innerHTML = activeTodayEntries.map(r => {
+        const km = Math.abs(parseFloat(r['TRIP KM'])||0);
+        const cng = parseFloat(r['CNG'])||0;
+        return `<div style="padding:.6rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+          <span style="font-size:18px;">🚛</span>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:600;font-family:var(--mono);">${r['VEHICLE']||'—'}</div>
+            <div style="font-size:11px;color:var(--text2);">${r['DRIVER']||'—'} · ${r['VENDOR']||'—'}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:12px;color:var(--accent2);font-family:var(--mono);">${km} km</div>
+            ${cng ? '<div style="font-size:11px;color:var(--text3);">⛽ CNG: '+cng+'</div>' : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Day off / no entry list
+  const dayOffList = document.getElementById('ms-dayoff-list');
+  if (dayOffList) {
+    const dayOffRows = dayOffEntries.map(r =>
+      `<div style="padding:.6rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;">😴</span>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:600;font-family:var(--mono);">${r['VEHICLE']||'—'}</div>
+          <div style="font-size:11px;color:var(--text3);">${r['DRIVER']||'—'} · ${r['VENDOR']||'Day Off'}</div>
+        </div>
+        <div style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:2px 8px;font-size:10px;color:var(--warn);">DAY OFF</div>
+      </div>`
+    );
+    const noEntryRows = noEntryDrivers.map(d =>
+      `<div style="padding:.6rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;">❓</span>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:600;font-family:var(--mono);">${d['VEHICLE']||d['CUR VEHICLE']||'—'}</div>
+          <div style="font-size:11px;color:var(--text3);">${d['DRIVER NAME']||'—'}</div>
+        </div>
+        <div style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:2px 8px;font-size:10px;color:var(--danger);">NO ENTRY</div>
+      </div>`
+    );
+    dayOffList.innerHTML = [...dayOffRows, ...noEntryRows].join('') ||
+      '<div style="padding:1rem;color:var(--text3);font-size:13px;text-align:center;">All drivers have entries today ✅</div>';
+  }
+
+  // Today's trips table
+  const cols = ['DATE','VEHICLE','DRIVER','VENDOR','TRIP KM','CNG','AMOUNT'];
+  renderTable('ms-trips-table', todayEntries, cols, null);
+  const tc = document.getElementById('ms-trips-count');
+  if (tc) tc.textContent = todayEntries.length + ' trips';
+
+  // Vendor breakdown
+  const vendorBreakdown = {};
+  activeTodayEntries.forEach(r => {
+    const v = r['VENDOR'] || 'OTHER';
+    if (!vendorBreakdown[v]) vendorBreakdown[v] = { trips: 0, km: 0 };
+    vendorBreakdown[v].trips++;
+    vendorBreakdown[v].km += Math.abs(parseFloat(r['TRIP KM'])||0);
+  });
+  const vbEl = document.getElementById('ms-vendor-breakdown');
+  if (vbEl) {
+    vbEl.innerHTML = Object.entries(vendorBreakdown).sort((a,b)=>b[1].trips-a[1].trips).map(([v,d]) =>
+      `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.85rem 1.25rem;min-width:150px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">${v}</div>
+        <div style="font-size:11px;color:var(--text2);">${d.trips} trips · ${Math.round(d.km).toLocaleString()} km</div>
+      </div>`
+    ).join('') || '<div style="color:var(--text3);font-size:13px;">No data yet for today</div>';
+  }
+}
+
+function showPageByName(id) {
+  const navItem = document.querySelector('.nav-item[onclick*="' + id + '"]');
+  if (navItem) showPage(id, navItem);
+}
+
+// ============================================================
 // PARKING TICKETS
 // ============================================================
 let pendingFiles = [];
@@ -2218,6 +2440,7 @@ function showPage(id, el) {
   }
   // Load parking tickets when opening that page
   if (id === 'parking') loadParkingTickets();
+  if (id === 'morning') renderMorningSummary();
 }
 
 async function refreshData() { await loadData(); }
